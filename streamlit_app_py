@@ -1,38 +1,47 @@
-# Import python packages
+
+ Import packages
 import streamlit as st
 from snowflake.snowpark.functions import col
 
-st.title(":cup_with_straw: Customize Your Smoothie! :cup_with_straw: ")
+# Title and description
+st.title(":cup_with_straw: Customize Your Smoothie! :cup_with_straw:")
 st.write("Choose the fruits you want in your custom Smoothie!")
 
+# Input for name
 name_on_order = st.text_input('Name on Smoothie:')
 st.write('The name on your Smoothie will be:', name_on_order)
 
+# Snowflake connection
 cnx = st.connection("snowflake")
 session = cnx.session()
-my_dataframe = session.table("SMOOTHIES.PUBLIC.FRUIT_OPTIONS").select(col('FRUIT_NAME'))
 
+# Fetch fruit options
+fruit_df = session.table("SMOOTHIES.PUBLIC.FRUIT_OPTIONS").select(col('FRUIT_NAME'))
+fruit_list = [row['FRUIT_NAME'] for row in fruit_df.collect()]  # Convert to list
+
+# Multiselect for ingredients
 ingredients_list = st.multiselect(
     'Choose up to 5 ingredients:',
-    my_dataframe
-    ,max_selections=5
+    fruit_list,
+    max_selections=5
 )
 
-if ingredients_list: 
-    ingredients_string = ' '.join(ingredients_list)  # Cleaner way to join ingredients
+# Submit order
+if st.button('Submit Order'):
+    if not name_on_order:
+        st.error("Please enter a name for your smoothie.")
+    elif not ingredients_list:
+        st.error("Please select at least one ingredient.")
+    else:
+        ingredients_string = ', '.join(ingredients_list)
 
-    # Adjust the columns to match your table schema
-    my_insert_stmt = f"""
-        INSERT INTO SMOOTHIES.PUBLIC.ORDERS (ingredients, name_on_order)
-        VALUES ('{ingredients_string}', '{name_on_order}')
-    """
-
-    time_to_insert = st.button('Submit Order')
-
-    if time_to_insert:
         try:
-            session.sql(my_insert_stmt).collect()
-            confirmation_msg = f"Your Smoothie is ordered: {name_on_order}! "
-            st.success(confirmation_msg, icon="✅")
+            # Use parameterized query to prevent SQL injection
+            session.sql("""
+                INSERT INTO SMOOTHIES.PUBLIC.ORDERS (INGREDIENTS, NAME_ON_ORDER)
+                VALUES (?, ?)
+            """).bind([ingredients_string, name_on_order]).collect()
+
+            st.success(f"Your Smoothie is ordered: {name_on_order}! ✅")
         except Exception as e:
             st.error(f"Error inserting order: {e}")
